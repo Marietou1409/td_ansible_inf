@@ -1,14 +1,31 @@
-- name: Configuration des interfaces Cisco L3
+- name: Configuration des interfaces + DHCP + NAT + PAT
   hosts: csr1000
   gather_facts: no
+  connection: network_cli
+
   tasks:
-    - name: Configurer les interfaces L3
+
+    - name: Configurer GigabitEthernet1 avec IP par DHCP
+      cisco.ios.ios_config:
+        lines:
+          - ip address dhcp
+          - no shutdown
+        parents: interface GigabitEthernet1
+
+    - name: Activer les interfaces 2 à 4
+      cisco.ios.ios_interfaces:
+        config:
+          - name: GigabitEthernet2
+            enabled: true
+          - name: GigabitEthernet3
+            enabled: true
+          - name: GigabitEthernet4
+            enabled: true
+        state: merged
+
+    - name: Configurer les interfaces avec IP fixes
       cisco.ios.ios_l3_interfaces:
         config:
-          - name: GigabitEthernet1
-            ipv4:
-              - address: 
-                secondary: true
           - name: GigabitEthernet2
             ipv4:
               - address: 192.168.2.1/24
@@ -19,13 +36,18 @@
             ipv4:
               - address: 192.168.4.1/24
         state: merged
-    - name: Supprimer le pool DHCP existant
+
+    - name: Supprimer le pool DHCP existant (si présent)
+      cisco.ios.ios_config:
+        lines:
+          - no ip dhcp pool LAN_POOL
+
+    - name: Exclure l'adresse du routeur de la plage DHCP
       cisco.ios.ios_config:
         lines:
           - no ip dhcp pool LAN_ENTREPRISE
 
-
-    - name: Créer le pool DHCP
+    - name: Configurer le pool DHCP
       cisco.ios.ios_config:
         lines:
           - ip dhcp pool LAN_ENTREPRISE
@@ -34,9 +56,44 @@
           - dns-server 8.8.8.8
           - domain-name entreprise.local
 
+    - name: Définir les interfaces LAN comme "inside"
+      cisco.ios.ios_config:
+        lines:
+          - ip nat inside 
+        parents: "interface {{ item }}"
+      loop:
+        - GigabitEthernet2
+        - GigabitEthernet3
+        - GigabitEthernet4
 
+    - name: Definir l'interface WAN comme "outside"
+      cisco.ios.ios_config:
+        lines:
+          - ip nat outside
+        parents: "interface GigabitEthernet1"
 
+    - name: Configurer l'ACL pour le NAT dynamique
+      cisco.ios.ios_config:
+        lines: "access-list 1 permit {{ item }} 0.0.0.255"
+      loop: 
+        - 192.168.2.0
+        - 192.168.3.0
+        - 192.168.4.0
 
+    - name: Activer le NAT dynamique avec surcharge
+      cisco.ios.ios_config:
+        lines: "ip nat inside source list 1 interface {{ item }} overload"
+      loop:
+        - GigabitEthernet1
+        - GigabitEthernet1
+        - GigabitEthernet1
 
+    - name: PAT statique - Rediriger port 80 (web) vers 192.168.3.2:80
+      cisco.ios.ios_config:
+        lines:
+          - ip nat inside source static tcp 192.168.3.2 80 interface GigabitEthernet1 80
 
-
+    - name: PAT statique - Rediriger port 2222 (SSH) vers 192.168.4.2:22
+      cisco.ios.ios_config:
+        lines:
+          - ip nat inside source static tcp 192.168.4.2 22 interface GigabitEthernet1 2222
