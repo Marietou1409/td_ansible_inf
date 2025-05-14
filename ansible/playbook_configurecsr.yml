@@ -84,9 +84,9 @@
       cisco.ios.ios_config:
         lines: "ip nat inside source list 1 interface {{ item }} overload"
       loop:
-        - GigabitEthernet1
-        - GigabitEthernet1
-        - GigabitEthernet1
+        - GigabitEthernet2
+        - GigabitEthernet3
+        - GigabitEthernet4
 
     - name: PAT statique - Rediriger port 80 (web) vers 192.168.3.2:80
       cisco.ios.ios_config:
